@@ -1,6 +1,6 @@
 # Aai
 
-Aai is a tiny web app that takes the small, everyday decisions off your plate.
+Aai is a web app that takes the small, everyday decisions off your plate.
 
 You tell it a bit about yourself once — your goals, what you want to stop having
 to think about, and what stage of life you're in — and it builds you a simple
