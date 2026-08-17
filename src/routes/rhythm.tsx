@@ -1,45 +1,73 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Shell } from "@/components/shell";
-import { applyTheme, defaultProfile, loadProfile, type AaiProfile } from "@/lib/aai-store";
+import {
+  applyTheme,
+  defaultProfile,
+  hasProfile,
+  loadCheckin,
+  loadDayState,
+  loadProfile,
+  type AaiProfile,
+  type DayCheckin,
+  type ItemStatus,
+} from "@/lib/aai-store";
+import { buildPlan, type PlanMode } from "@/lib/aai-plan";
 
 export const Route = createFileRoute("/rhythm")({
   component: Rhythm,
 });
 
-type Status = "pending" | "confirmed" | "skipped";
-
-const LABELS: Record<string, string> = {
-  morning: "Morning nudge",
-  movement: "Movement",
-  priorities: "Top 3 for today",
-  relationship: "Reconnect",
-  dinner: "Dinner",
-};
-
 function Rhythm() {
   const [profile, setProfile] = useState<AaiProfile>(defaultProfile);
-  const [status, setStatus] = useState<Record<string, Status>>({});
+  const [status, setStatus] = useState<Record<string, ItemStatus>>({});
+  const [checkin, setCheckin] = useState<DayCheckin | null>(null);
 
   useEffect(() => {
     const p = loadProfile();
     setProfile(p);
     applyTheme(p.theme);
-    try {
-      const raw = window.localStorage.getItem("aai:day-state");
-      if (raw) setStatus(JSON.parse(raw));
-    } catch {
-      // ignore
-    }
+    setStatus(loadDayState());
+    setCheckin(loadCheckin());
   }, []);
 
-  const ids = Object.keys(LABELS);
-  const handled = ids.length; // Aai handled all of them (surfaced)
+  const profileReady = hasProfile(profile);
+  const isPaused = checkin?.choice === "skip";
+  const mode: PlanMode = checkin?.choice === "swap" ? "light" : "normal";
+  const plan = buildPlan(profile, mode);
+
+  const ids = plan.map((item) => item.id);
+  const labelById = Object.fromEntries(plan.map((item) => [item.id, item.kind]));
+  const handled = ids.length;
   const confirmed = ids.filter((id) => status[id] === "confirmed");
   const skipped = ids.filter((id) => status[id] === "skipped");
   const open = ids.filter((id) => !status[id] || status[id] === "pending");
 
   const freed = handled - open.length;
+
+  if (!profileReady) {
+    return (
+      <Shell>
+        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3">
+          Your rhythm · today
+        </p>
+        <h1 className="serif text-5xl leading-[1.05] max-w-2xl">
+          We don't have a plan for today yet.
+        </h1>
+        <div className="mt-8 rounded-2xl border bg-card p-6 max-w-xl">
+          <p className="text-muted-foreground">
+            Let's set one up — answer three quick questions and Aai will build today's plan.
+          </p>
+          <Link
+            to="/"
+            className="inline-block mt-4 rounded-full bg-primary text-primary-foreground px-5 py-2.5 text-sm"
+          >
+            Set up my rhythm →
+          </Link>
+        </div>
+      </Shell>
+    );
+  }
 
   return (
     <Shell>
@@ -56,39 +84,48 @@ function Rhythm() {
         <span className="lowercase">{profile.stage || "—"}</span> chapter.
       </p>
 
-      <div className="mt-10 grid gap-4 md:grid-cols-3">
-        <Bucket
-          tone="accent"
-          label="Aai handled"
-          count={handled}
-          items={ids.map((id) => LABELS[id])}
-        />
-        <Bucket
-          tone="success"
-          label="You confirmed"
-          count={confirmed.length}
-          items={confirmed.map((id) => LABELS[id])}
-        />
-        <Bucket
-          tone="muted"
-          label="You skipped"
-          count={skipped.length}
-          items={skipped.map((id) => LABELS[id])}
-        />
-      </div>
-
-      <div className="mt-12 rounded-3xl border bg-card p-8 text-center">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">
-          Today's readout
+      {isPaused ? (
+        <div className="mt-10 rounded-2xl border bg-card p-8 text-center text-muted-foreground">
+          You paused today's plan, so there's nothing to review yet.
         </div>
-        <p className="serif text-4xl md:text-5xl mt-3">
-          You freed up <em className="text-accent not-italic">{freed}</em>{" "}
-          {freed === 1 ? "decision" : "decisions"} today.
-        </p>
-        <p className="mt-3 text-sm text-muted-foreground">
-          That's energy back for the calls only you can make.
-        </p>
-      </div>
+      ) : (
+        <>
+          <div className="mt-10 grid gap-4 md:grid-cols-3">
+            <Bucket
+              tone="accent"
+              label="Aai handled"
+              count={handled}
+              items={ids.map((id) => labelById[id])}
+            />
+            <Bucket
+              tone="success"
+              label="You confirmed"
+              count={confirmed.length}
+              items={confirmed.map((id) => labelById[id])}
+            />
+            <Bucket
+              tone="muted"
+              label="You skipped"
+              count={skipped.length}
+              items={skipped.map((id) => labelById[id])}
+            />
+          </div>
+
+          <div className="mt-12 rounded-3xl border bg-card p-8 text-center">
+            <div className="text-xs uppercase tracking-widest text-muted-foreground">
+              Today's estimate
+            </div>
+            <p className="serif text-4xl md:text-5xl mt-3">
+              You skipped deciding on <em className="text-accent not-italic">{freed}</em>{" "}
+              {freed === 1 ? "thing" : "things"} today.
+            </p>
+            <p className="mt-3 text-sm text-muted-foreground">
+              A self-reported estimate based on what you confirmed or skipped — not a precise
+              measurement.
+            </p>
+          </div>
+        </>
+      )}
 
       <div className="mt-10 flex items-center justify-between">
         <Link to="/moment" className="text-sm text-muted-foreground hover:text-foreground">
